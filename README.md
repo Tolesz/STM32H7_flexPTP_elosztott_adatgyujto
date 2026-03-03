@@ -22,7 +22,7 @@ Still not clear what is it useful for? No worries, it's a behind-the-scenes supp
 
 ```
 git clone https://github.com/epagris/flexPTP-demo-NUCLEO-H743ZI
-cd flexPTP-demo-NUCLEO-H743ZI2
+cd flexPTP-demo-NUCLEO-H743ZI
 git submodule init
 git submodule update
 ```
