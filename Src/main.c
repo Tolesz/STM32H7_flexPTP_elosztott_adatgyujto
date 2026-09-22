@@ -1,18 +1,23 @@
 #include <memory.h>
 #include <stdint.h>
-
+#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
-#include <stm32h7xx_hal.h>
 
+#include <stm32h7xx_hal.h>
+#include <stm32h7xx_hal_rcc.h>
+#include <stm32h7xx_hal_tim.h>
+#include <stm32h7xx_hal_flash_ex.h>
 #include <stm32h7xx_ll_rng.h>
+#include <stm32h7xx_it.h>
 
 #include "FreeRTOSConfig.h"
-
+#include "FreeRTOS.h"
+#include <cmsis_os2.h>
 
 #include "cliutils/cli.h"
 #include "cmds.h"
 #include "ethernet/ethernet_lwip.h"
-
 #include "flexptp/event.h"
 #include "flexptp/logging.h"
 #include "flexptp/profiles.h"
@@ -20,53 +25,67 @@
 #include "flexptp/settings_interface.h"
 #include "standard_output/serial_io.h"
 #include "standard_output/standard_output.h"
-
-#include <cmsis_os2.h>
-
+#include "capture_handler.h"
 
 #define FLEXPTP_INITIAL_PROFILE ("gPTP")
-
-// ------------------------
-
-void Error_Handler(void);
-
-// ------------------------
-
 #define TARGET_SYSCLK_MHZ (configCPU_CLOCK_HZ / 1000000)
 
+// ---------------------------------------------------------------------------
+// Periféria Handle-ök
+// ---------------------------------------------------------------------------
+TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
+DMA_HandleTypeDef hdma_tim2_ch1;
+
+UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart3_tx;
+
+osTimerId_t myLedTimerHandle;
+const osTimerAttr_t myLedTimer_attributes = {
+  .name = "myLedTimer"
+};
+
+// Prototípusok
+void Error_Handler(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_TIM2_Init(void);
+//static void MX_USART3_UART_Init(void);
+static void MX_TIM3_Init(void);
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+void vLedTimerCallback(void *argument);
+void TIM3_SetFrequency(uint32_t frequency);
+uint32_t Parse_Frequency(char *str);
+
+// ---------------------------------------------------------------------------
+// Órajel és Rendszerbeállítások
+// ---------------------------------------------------------------------------
 void init_pll() {
     RCC_OscInitTypeDef osc;
     RCC_ClkInitTypeDef clk;
 
-    // clear the structures
     memset(&osc, 0, sizeof(RCC_OscInitTypeDef));
     memset(&clk, 0, sizeof(RCC_ClkInitTypeDef));
 
-    // ---------------------
-
-    // Configure the Main PLL.
-
     osc.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-	osc.HSEState = RCC_HSE_ON; // TODO: turn HSE bypass OFF if using X3 instead of the board controller's clock output
-	osc.HSIState = RCC_HSI_OFF;
-	osc.CSIState = RCC_CSI_OFF;
-	osc.PLL.PLLState = RCC_PLL_ON;
-	osc.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+    osc.HSEState = RCC_HSE_ON; 
+    osc.HSIState = RCC_HSI_OFF;
+    osc.CSIState = RCC_CSI_OFF;
+    osc.PLL.PLLState = RCC_PLL_ON;
+    osc.PLL.PLLSource = RCC_PLLSOURCE_HSE;
 
-	osc.PLL.PLLM = HSE_VALUE / 2000000;
-	osc.PLL.PLLN = TARGET_SYSCLK_MHZ;
-	osc.PLL.PLLFRACN = 0;
-	osc.PLL.PLLP = 2;
-	osc.PLL.PLLR = 2;
-	osc.PLL.PLLQ = 4;
+    osc.PLL.PLLM = HSE_VALUE / 2000000;
+    osc.PLL.PLLN = TARGET_SYSCLK_MHZ;
+    osc.PLL.PLLFRACN = 0;
+    osc.PLL.PLLP = 2;
+    osc.PLL.PLLR = 2;
+    osc.PLL.PLLQ = 4;
 
-	osc.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
-	osc.PLL.PLLRGE = RCC_PLL1VCIRANGE_1;
-
+    osc.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
+    osc.PLL.PLLRGE = RCC_PLL1VCIRANGE_1;
 
     HAL_RCC_OscConfig(&osc);
 
-    // initialize clock tree
     clk.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK |
                      RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2 |
                      RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1);
@@ -78,137 +97,146 @@ void init_pll() {
     clk.APB3CLKDivider = RCC_APB3_DIV2;
     clk.APB4CLKDivider = RCC_APB4_DIV2;
 
-    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_4); // set a FLASH latency supporting maximum speed
-
-    // ---------------------
+    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_4);
 }
 
 void init_osc_and_clk() {
-    // ensure that the MCU uses the internal LDO instead of anything else
     HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
-    // configure internal voltage regulator to VOS0 to unlock main clock frequencies above 400MHz
-    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
-    while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {
-    }
+    // VOS1-et használunk a stabil 200MHz körüli működéshez
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+    while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
 
-    // initialize the main PLL
     init_pll();
 
-    // turn on additional clock sources and prepare GPIOs for high-speed operation
     __HAL_RCC_HSI48_ENABLE();
     __HAL_RCC_SYSCFG_CLK_ENABLE();
     __HAL_RCC_CSI_ENABLE();
     HAL_EnableCompensationCell();
 
-    // compute SYSCLK values (HSE_VALUE must be correct when invoking this)
     SystemCoreClockUpdate();
-
-    // set tick frequency
     HAL_SetTickFreq(HAL_TICK_FREQ_1KHZ);
 }
 
 void print_welcome_message() {
     MSGraw("\033[2J\033[H");
-    MSG(ANSI_COLOR_BGREEN "Hi!" ANSI_COLOR_BYELLOW " This is a flexPTP demo for the STMicroelectronics NUCLEO-H743ZI2 (STM32H743) board.\n\n"
-                          "The application is built on FreeRTOS, flexPTP is currenty compiled against %s and uses the supplied example %s Network Stack Driver. "
-                          "In this demo, the underlying Ethernet stack can be either lwip or EtherLib, the 'ETH_STACK' CMake variable (in the main CMakeLists.txt file) determines which one will be used. "
-                          "The STM32H7xx PTP hardware module driver is also picked from the bundled ones. This flexPTP instance features a full CLI control interface, the help can be listed by typing '?' once the flexPTP has loaded. "
-                          "The initial PTP preset that loads upon flexPTP initialization is the 'gPTP' (802.1AS) profile. It's a nowadays common profile, but we encourage "
-                          "you to also try out the 'default' (plain IEEE 1588) profile and fiddle around with other options as well. The application will try to acquire an IP-address with DHCP. "
-                          "Once the IP-address is secured, you might start the flexPTP module by typing 'flexptp'. 'Have a great time! :)'\n\n" ANSI_COLOR_RESET,
-        ETH_STACK, ETH_STACK);
-
-    MSG(ANSI_COLOR_BRED "By default, the MCU clock is sourced by the onboard (STLink) board controller on this devboard. According to our observations, this clock signal is loaded "
-                        "with heavy noise rendering the clock synchronization unable to settle precisely. We highly recommend to solder a 8 MHz oscillator onto "
-                        "the designated X3 pads to achieve the best results!\n\n" ANSI_COLOR_RESET);
-
-    // MSG("Freq: %u\n", SystemCoreClock);
+    MSG(ANSI_COLOR_BGREEN "Hi!" ANSI_COLOR_BYELLOW " This is a flexPTP demo merged with Custom Capture/PWM components.\n\n" ANSI_COLOR_RESET);
 }
 
-
+// ---------------------------------------------------------------------------
+// Fő indító szál
+// ---------------------------------------------------------------------------
 void task_startup(void *arg) {
-    // initialize the CLI
+    // FlexPTP alrendszerek indítása
     cli_init();
-
-    // print greetings
     print_welcome_message();
-
-    // initialize Ethernet
     init_ethernet();
-
-    // initialize commands
     cmd_init();
 
-    // -------------
+    // Az Ön egyedi periféria-logikájának inicializálása
+    Capture_Init(&htim2);
+    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+
+    uint8_t rx_data;
+    char cmd_buffer[16];
+    int idx = 0;
+    char *msg = "Hello from FreeRTOS (flexPTP + Capture Active)!\r\n";
+    HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 
     for (;;) {
-        osDelay(1000);
+        // UART karakter fogadása (non-blocking) az Ön kódjából
+        if (HAL_UART_Receive(&huart3, &rx_data, 1, 10) == HAL_OK) {
+            HAL_UART_Transmit(&huart3, &rx_data, 1, 10); // Echo
+            
+            if (rx_data == '\r' || rx_data == '\n') {
+                cmd_buffer[idx] = '\0';
+                
+                if (idx > 0) {
+                    if (cmd_buffer[0] == 'C') {
+                        uint32_t ref_hz = Parse_Frequency(&cmd_buffer[1]);
+                        if (ref_hz > 0) {
+                            Capture_Calibrate_By_Freq(ref_hz);
+                        } else {
+                            printf("\r\n>>> HIBA: Ervenytelen frekvencia formatum!\r\n");
+                        }
+                    }
+                    else {
+                        uint32_t new_freq = atoi(cmd_buffer);
+                        if (new_freq > 0) {
+                            TIM3_SetFrequency(new_freq);
+                            printf("\r\n>>> Uj frekvencia: %lu Hz\r\n", new_freq);
+                        }
+                    }
+                }
+                idx = 0;
+            } else if (idx < 15) {
+                cmd_buffer[idx++] = rx_data;
+            }
+        }
+
+        // Capture feldolgozó háttérfüggvénye
+        Capture_Process();
+
+        // 50ms késleltetés (hogy a flexPTP szálak is bőségesen kapjanak CPU időt)
+        osDelay(50);
     }
 }
 
-void btn_cb() {
-}
-
+// ---------------------------------------------------------------------------
+// Inicializálások és Main
+// ---------------------------------------------------------------------------
 void init_randomizer() {
     __HAL_RCC_RNG_CLK_ENABLE();
-
     LL_RNG_Enable(RNG);
-
-    while (!LL_RNG_IsActiveFlag_DRDY(RNG)) {
-    }
-
+    while (!LL_RNG_IsActiveFlag_DRDY(RNG)) {}
     srand(LL_RNG_ReadRandData32(RNG));
 }
 
-void init_mpu() {
-    HAL_MPU_Disable();
-}
-
 int main(void) {
-    // initialize FPU and several system blocks
     SystemInit();
-
-    // initialize HAL library
     HAL_Init();
-
-    // initialize oscillator and clocking
-    init_osc_and_clk();
-
-    // make random a bit more less deterministic
+    
+    init_osc_and_clk();     // Kombinált órajel beállítás
     init_randomizer();
-
-    // initialize MPU
-    init_mpu();
-
-    // initialize standard output
+    HAL_MPU_Disable();      // flexPTP kompatibilis MPU kikapcsolás
     serial_io_init();
 
-    // -------------
+    // MX Perifériák inicializálása (Az Ön kódjából)
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_TIM2_Init();
+    //MX_USART3_UART_Init();
+    MX_TIM3_Init();
 
-    // initialize the FreeRTOS kernel
     osKernelInitialize();
 
-    // create startup thread
+    // Szoftveres LED Timer létrehozása
+    myLedTimerHandle = osTimerNew(vLedTimerCallback, osTimerPeriodic, NULL, &myLedTimer_attributes);
+    if (myLedTimerHandle != NULL) {
+        osTimerStart(myLedTimerHandle, 500); // 500 ms-os periódus a villogáshoz
+    }
+
+    // Egyetlen közös Init/Startup szál indítása (2048 szóméret a flexPTP miatt kötelező)
     osThreadAttr_t attr;
     memset(&attr, 0, sizeof(attr));
     attr.stack_size = 2048;
     attr.name = "init";
+    attr.priority = (osPriority_t) osPriorityNormal;
     osThreadNew(task_startup, NULL, &attr);
 
-    // start the FreeRTOS!
     osKernelStart();
 
-    for (;;) {
-    }
+    for (;;) {}
 }
 
+// ---------------------------------------------------------------------------
+// Callback-ek és egyedi segédfüggvények
+// ---------------------------------------------------------------------------
 void flexptp_user_event_cb(PtpUserEventCode uev) {
     switch (uev) {
     case PTP_UEV_INIT_DONE:
         ptp_load_profile(ptp_profile_preset_get(FLEXPTP_INITIAL_PROFILE));
         ptp_print_profile();
-
         ptp_log_enable(PTP_LOG_DEF, true);
         ptp_log_enable(PTP_LOG_BMCA, true);
         break;
@@ -217,12 +245,29 @@ void flexptp_user_event_cb(PtpUserEventCode uev) {
     }
 }
 
+void vLedTimerCallback(void *argument) {
+    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+}
 
-// ------------------------
+void TIM3_SetFrequency(uint32_t frequency) {
+    if (frequency == 0) return;
+    uint32_t timer_clk = 200000000; // 200 MHz
+    uint32_t arr_value = (timer_clk / (frequency)) - 1;
+    __HAL_TIM_SET_AUTORELOAD(&htim3, arr_value);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, (arr_value + 1) / 2);
+}
 
+uint32_t Parse_Frequency(char *str) {
+    char *endptr;
+    float value = strtof(str, &endptr);
+    while (*endptr == ' ') endptr++;
+    if (*endptr == 'k' || *endptr == 'K') value *= 1000.0f;
+    else if (*endptr == 'M' || *endptr == 'm') value *= 1000000.0f;
+    return (uint32_t)value;
+}
+
+// FreeRTOS Specifikus Heap tömb szekció elhelyezéssel
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((section(".FreeRTOSHeapSection")));
-
-// ------------------------
 
 void vApplicationTickHook(void) {
     HAL_IncTick();
@@ -232,4 +277,105 @@ void vApplicationIdleHook(void) {
     return;
 }
 
-// --------
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM6) {
+        HAL_IncTick();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MX Generált Periféria Inicializáló Függvények
+// ---------------------------------------------------------------------------
+static void MX_TIM2_Init(void) {
+    TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+    TIM_IC_InitTypeDef sConfigIC = {0};
+
+    htim2.Instance = TIM2;
+    htim2.Init.Prescaler = 0;
+    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim2.Init.Period = 4294967295;
+    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    HAL_TIM_Base_Init(&htim2);
+    sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+    HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig);
+    HAL_TIM_IC_Init(&htim2);
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig);
+    sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+    sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+    sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+    sConfigIC.ICFilter = 0;
+    HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1);
+}
+
+static void MX_TIM3_Init(void) {
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+    TIM_OC_InitTypeDef sConfigOC = {0};
+
+    htim3.Instance = TIM3;
+    htim3.Init.Prescaler = 0;
+    htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim3.Init.Period = 399;
+    htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+    HAL_TIM_PWM_Init(&htim3);
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig);
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse = 199;
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+    HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1);
+    HAL_TIM_MspPostInit(&htim3);
+}
+
+/*static void MX_USART3_UART_Init(void) {
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 115200;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+    huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    huart3.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+    huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+    HAL_UART_Init(&huart3);
+    HAL_UARTEx_SetTxFifoThreshold(&huart3, UART_TXFIFO_THRESHOLD_1_8);
+    HAL_UARTEx_SetRxFifoThreshold(&huart3, UART_RXFIFO_THRESHOLD_1_8);
+    HAL_UARTEx_DisableFifoMode(&huart3);
+}*/
+
+static void MX_DMA_Init(void) {
+    __HAL_RCC_DMA1_CLK_ENABLE();
+    HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+    HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+}
+
+static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOH_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+
+void Error_Handler(void) {
+    __disable_irq();
+    while (1) {}
+}

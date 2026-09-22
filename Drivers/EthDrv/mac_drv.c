@@ -152,7 +152,7 @@ static void ETHHW_InitPeripheral(ETH_TypeDef *eth, ETHHW_InitOpts *init) {
 
     // transmit descriptor initialization
     memset(init->txRingPtr, 0, sizeof(ETHHW_DescFull) * init->txRingLen); // clear everything
-    ring = init->txRingPtr;
+    ring = (ETHHW_DescFull *) init->txRingPtr;
     uint8_t *txBuf = init->bufPtr + alignedBufSize * init->rxRingLen; // fill in later used buffer addresses
     for (uint16_t i = 0; i < init->txRingLen; i++) {
         ETHHW_DescFull *bd = ring + i;

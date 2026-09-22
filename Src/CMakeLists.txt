@@ -5,10 +5,12 @@ target_sources(
     syscall.c
     sysmem.c
     system_stm32h7xx.c
-
+    capture_handler.c
     cmds.c
     cmds.h
-
+    stm32h7xx_it.c
+    stm32h7xx_hal_msp.c
+    stm32h7xx_hal_timebase_tim.c
     etherlib_options.c
 )
 

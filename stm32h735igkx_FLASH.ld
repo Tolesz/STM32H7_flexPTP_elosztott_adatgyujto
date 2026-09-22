@@ -166,6 +166,16 @@ SECTIONS
     . = ALIGN(8);
   } >RAM_D1
 
+  .axi_sram (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _saxi_sram = .;       /* Szekció kezdete szimbólum */
+    *(.axi_sram)
+    *(.axi_sram*)
+    . = ALIGN(4);
+    _eaxi_sram = .;       /* Szekció vége szimbólum */
+  } >RAM_D1
+
   .EthDrv_sec (NOLOAD) :
   {
     *(.ETHStateAndDecripSection)

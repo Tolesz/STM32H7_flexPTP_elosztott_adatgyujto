@@ -17,13 +17,13 @@
             "interface": "swd",
             "serialNumber": "", //Set ST-Link ID if you use multiple at the same time
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
+            "svdFile": "${env:STM32CLT_PATH}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
             "v1": false, //Change it depending on ST Link version
-            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
-            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "armToolchainPath": "${config:STM32VSCodeExtension.cubeCLT.path}/GNU-tools-for-STM32/bin",
-            "gdbPath": "gdb-multiarch",
+            "serverpath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer": "${env:STM32CLT_PATH}/STM32CubeProgrammer/bin",
+            "stlinkPath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "armToolchainPath": "${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin",
+            //"gdbPath": "gdb-multiarch",
             "serverArgs": [
                 "-m",
                 "0",
@@ -45,12 +45,12 @@
             "interface": "swd",
             "serialNumber": "", //Set ST-Link ID if you use multiple at the same time
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
+            "svdFile": "${env:STM32CLT_PATHM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
             "v1": false, //Change it depending on ST Link version
-            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
-            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "armToolchainPath": "${config:STM32VSCodeExtension.cubeCLT.path}/GNU-tools-for-STM32/bin",
+            "serverpath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer": "${env:STM32CLT_PATH}/STM32CubeProgrammer/bin",
+            "stlinkPath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "armToolchainPath": "${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin",
             "gdbPath": "gdb-multiarch",
             "serverArgs": [
                 "-m",
@@ -68,7 +68,7 @@
             "servertype": "openocd",
             "device": "STM32H743ZITx",
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
+            "svdFile": "${env:STM32CLT_PATH}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
             "gdbPath": "gdb-multiarch",
             "configFiles": [
                 "board/st_nucleo_h743zi.cfg"
@@ -89,7 +89,7 @@
             "servertype": "openocd",
             "device": "STM32H743ZITx",
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32F743.svd",
+            "svdFile": "${env:STM32CLT_PATH}/STMicroelectronics_CMSIS_SVD/STM32F743.svd",
             "gdbPath": "gdb-multiarch",
             "configFiles": [
                 "board/st_nucleo_h743zi.cfg"
