@@ -6,6 +6,7 @@ target_sources(
     sysmem.c
     system_stm32h7xx.c
     capture_handler.c
+    ptp_tim_sync.c
     cmds.c
     cmds.h
     stm32h7xx_it.c

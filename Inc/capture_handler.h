@@ -21,6 +21,8 @@ void Capture_Init(TIM_HandleTypeDef *htim);
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
 void Capture_Calibrate_By_Freq(uint32_t ref_hz); // Frekvencia alapján történő kalibráció  
 void Capture_Process(void); // Adatok kiírása
+void Capture_SetGateMs(uint32_t ms); // Kapuidő beállítása [ms] (ennyi időnyi periódust átlagol)
+uint32_t Capture_GetGateMs(void);
 uint32_t Capture_GetLastRawNS(void); // Utolsó mért nyers idő lekérése
 float Capture_GetFactor(void); // Kalibrációs faktor lekérése
 void Capture_GetData(Capture_Data_t *data);

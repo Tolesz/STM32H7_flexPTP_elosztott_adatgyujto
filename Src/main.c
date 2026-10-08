@@ -26,6 +26,7 @@
 #include "standard_output/serial_io.h"
 #include "standard_output/standard_output.h"
 #include "capture_handler.h"
+#include "ptp_tim_sync.h"
 
 #define FLEXPTP_INITIAL_PROFILE ("gPTP")
 #define TARGET_SYSCLK_MHZ (configCPU_CLOCK_HZ / 1000000)
@@ -134,6 +135,7 @@ void task_startup(void *arg) {
     cmd_init();
 
     // Az Ön egyedi periféria-logikájának inicializálása
+    PtpTimSync_Init(&htim2);   // PPS (ETH_PPS_OUT) befogása TIM2_CH4-en -> TIM2 <-> PTP szinkron
     Capture_Init(&htim2);
     HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 
@@ -251,7 +253,7 @@ void vLedTimerCallback(void *argument) {
 
 void TIM3_SetFrequency(uint32_t frequency) {
     if (frequency == 0) return;
-    uint32_t timer_clk = 200000000; // 200 MHz
+    uint32_t timer_clk = PtpTimSync_GetNominalTimerClock(); // TIM2/TIM3 is az APB1 timer órajelről megy
     uint32_t arr_value = (timer_clk / (frequency)) - 1;
     __HAL_TIM_SET_AUTORELOAD(&htim3, arr_value);
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, (arr_value + 1) / 2);
