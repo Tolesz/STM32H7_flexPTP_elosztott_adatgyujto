@@ -1,5 +1,6 @@
 #include "capture_handler.h"
 #include <stdint.h>
+#include <math.h>
 #include "float.h"
 #include "stdlib.h"
 #include "stm32h7xx_hal_tim.h"
@@ -75,6 +76,40 @@ void Capture_Calibrate_By_Freq(uint32_t ref_hz) {
     }
 }
 
+// Fixpontos szám formázása szöveggé (az embfmt %.Nf kerekítési hibáját elkerülve: N >= 2 esetén
+// pl. 0.9999 -> "1.990" lesz belőle). dec: tizedesjegyek száma (0..9).
+static const char *fmt_fixed(char *buf, size_t len, double v, int dec) {
+    static const uint32_t pow10[] = {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000};
+    if (dec < 0) dec = 0;
+    if (dec > 9) dec = 9;
+
+    bool neg = v < 0;
+    if (neg) v = -v;
+
+    uint64_t scaled = (uint64_t)llround(v * (double)pow10[dec]);
+    uint64_t ip = scaled / pow10[dec];
+    uint32_t fp = (uint32_t)(scaled % pow10[dec]);
+
+    // számjegyek visszafelé
+    char tmp[32];
+    int n = 0;
+    for (int i = 0; i < dec; i++) {
+        tmp[n++] = (char)('0' + fp % 10);
+        fp /= 10;
+    }
+    if (dec > 0) tmp[n++] = '.';
+    do {
+        tmp[n++] = (char)('0' + ip % 10);
+        ip /= 10;
+    } while (ip > 0 && n < (int)sizeof(tmp) - 1);
+    if (neg && scaled != 0) tmp[n++] = '-';
+
+    size_t k = 0;
+    while (n > 0 && k < len - 1) buf[k++] = tmp[--n];
+    buf[k] = '\0';
+    return buf;
+}
+
 static inline uint32_t buf_at(uint32_t newest_idx, uint32_t back) {
     return dma_buffer[(newest_idx + DMA_BUF_SIZE - back) % DMA_BUF_SIZE];
 }
@@ -127,15 +162,41 @@ void Capture_Process(void) {
     last_print_edge = last_edge;
     printed_once = true;
 
+    double f_unit = freq;
+    const char *unit = "Hz";
     if (freq >= 1000000.0) {
-        MSG("[MEAS] Freq: %.3f MHz | ", freq / 1000000.0);
+        f_unit = freq / 1000000.0;
+        unit = "MHz";
     } else if (freq >= 1000.0) {
-        MSG("[MEAS] Freq: %.3f kHz | ", freq / 1000.0);
-    } else {
-        MSG("[MEAS] Freq: %.3f Hz | ", freq);
+        f_unit = freq / 1000.0;
+        unit = "kHz";
     }
 
-    MSG("Period: %.1f ns | Ticks: %.2f", period_ns * calibration_factor, ticks);
+    // Frekvencia: egész rész + 9 tizedesjegy (a PTP időbélyeghez hasonlóan egészként kiírva,
+    // így a tizedes rész felfelé kerekítése helyesen átvisz az egész részbe)
+    uint64_t f_scaled = (uint64_t)llround(f_unit * 1e9);
+    uint32_t f_int = (uint32_t)(f_scaled / 1000000000ULL);
+    uint32_t f_frac = (uint32_t)(f_scaled % 1000000000ULL);
+
+    // Periódus: 10 jegyű egész rész (vezető nullákkal) + 1 tizedesjegy [ns].
+    // Az egész rész két darabban (felső jegyek + alsó 9 jegy), mert 4.29 s felett nem fér el 32 biten.
+    uint64_t p_scaled = (uint64_t)llround(period_ns * calibration_factor * 10.0);
+    uint64_t p_int = p_scaled / 10;
+    uint32_t p_hi = (uint32_t)(p_int / 1000000000ULL);
+    uint32_t p_lo = (uint32_t)(p_int % 1000000000ULL);
+    uint32_t p_frac = (uint32_t)(p_scaled % 10);
+
+    char s_ticks[24];
+    MSG("[MEAS] Freq: %u.%09u %s | Period: %u%09u.%u ns | Ticks: %s",
+        f_int, f_frac, unit, p_hi, p_lo, p_frac,
+        fmt_fixed(s_ticks, sizeof(s_ticks), ticks, 2));
+
+    // A helyi óra (TIM2) eltérése a PTP időtől (mastertől): + = az STM32 órája gyorsabb
+    if (PtpTimSync_IsLocked()) {
+        double nominal = (double)PtpTimSync_GetNominalTimerClock();
+        char s_ppm[24];
+        MSG(" | Clk: %s ppm", fmt_fixed(s_ppm, sizeof(s_ppm), (f_tim - nominal) / nominal * 1e6, 3));
+    }
 
     // Az utolsó él időbélyege a közös (PTP) időskálán
     TimestampU ts;
