@@ -22,6 +22,7 @@
 #include "stm32h7xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "capture_handler.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,6 +57,8 @@
 
 /* External variables --------------------------------------------------------*/
 extern DMA_HandleTypeDef hdma_tim2_ch1;
+extern DMA_HandleTypeDef hdma_tim2_ch2;
+extern DMA_HandleTypeDef hdma_tim2_ch3;
 extern TIM_HandleTypeDef htim2;
 extern DMA_HandleTypeDef hdma_usart3_tx;
 extern TIM_HandleTypeDef htim6;
@@ -189,6 +192,26 @@ void DMA1_Stream1_IRQHandler(void)
 
   /* USER CODE END DMA1_Stream1_IRQn 1 */
 }
+
+#if CAPTURE_CHANNEL_COUNT >= 2
+/**
+  * @brief This function handles DMA1 stream2 global interrupt (TIM2_CH2 capture).
+  */
+void DMA1_Stream2_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_tim2_ch2);
+}
+#endif
+
+#if CAPTURE_CHANNEL_COUNT >= 3
+/**
+  * @brief This function handles DMA1 stream3 global interrupt (TIM2_CH3 capture).
+  */
+void DMA1_Stream3_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_tim2_ch3);
+}
+#endif
 
 /**
   * @brief This function handles TIM2 global interrupt.

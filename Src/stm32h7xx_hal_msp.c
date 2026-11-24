@@ -21,9 +21,11 @@
 #include "main.h"
 #include "stm32h7xx_hal_gpio.h"
 /* USER CODE BEGIN Includes */
-
+#include "capture_handler.h"
 /* USER CODE END Includes */
 extern DMA_HandleTypeDef hdma_tim2_ch1;
+extern DMA_HandleTypeDef hdma_tim2_ch2;
+extern DMA_HandleTypeDef hdma_tim2_ch3;
 
 extern DMA_HandleTypeDef hdma_usart3_tx;
 
@@ -129,6 +131,46 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     }
 
     __HAL_LINKDMA(htim_base,hdma[TIM_DMA_ID_CC1],hdma_tim2_ch1);
+
+#if CAPTURE_CHANNEL_COUNT >= 2
+    /* PB3 ------> TIM2_CH2 (a Nucleón SWO is - SWO trace nem használható mellette) */
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    GPIO_InitStruct.Pin = GPIO_PIN_3;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLDOWN; // bekötetlen bemenet se lebegjen
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    hdma_tim2_ch2.Instance = DMA1_Stream2;
+    hdma_tim2_ch2.Init = hdma_tim2_ch1.Init;
+    hdma_tim2_ch2.Init.Request = DMA_REQUEST_TIM2_CH2;
+    if (HAL_DMA_Init(&hdma_tim2_ch2) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    __HAL_LINKDMA(htim_base,hdma[TIM_DMA_ID_CC2],hdma_tim2_ch2);
+#endif
+
+#if CAPTURE_CHANNEL_COUNT >= 3
+    /* PB10 ------> TIM2_CH3 */
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    GPIO_InitStruct.Pin = GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    hdma_tim2_ch3.Instance = DMA1_Stream3;
+    hdma_tim2_ch3.Init = hdma_tim2_ch1.Init;
+    hdma_tim2_ch3.Init.Request = DMA_REQUEST_TIM2_CH3;
+    if (HAL_DMA_Init(&hdma_tim2_ch3) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    __HAL_LINKDMA(htim_base,hdma[TIM_DMA_ID_CC3],hdma_tim2_ch3);
+#endif
 
     /* TIM2 interrupt Init */
     HAL_NVIC_SetPriority(TIM2_IRQn, 5, 0);

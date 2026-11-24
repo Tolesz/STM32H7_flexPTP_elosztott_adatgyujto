@@ -37,6 +37,8 @@
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 DMA_HandleTypeDef hdma_tim2_ch1;
+DMA_HandleTypeDef hdma_tim2_ch2;
+DMA_HandleTypeDef hdma_tim2_ch3;
 
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart3_tx;
@@ -311,6 +313,12 @@ static void MX_TIM2_Init(void) {
     sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
     sConfigIC.ICFilter = 0;
     HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1);
+#if CAPTURE_CHANNEL_COUNT >= 2
+    HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_2);
+#endif
+#if CAPTURE_CHANNEL_COUNT >= 3
+    HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_3);
+#endif
 }
 
 static void MX_TIM3_Init(void) {
@@ -359,6 +367,14 @@ static void MX_DMA_Init(void) {
     HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
     HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+#if CAPTURE_CHANNEL_COUNT >= 2
+    HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+#endif
+#if CAPTURE_CHANNEL_COUNT >= 3
+    HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
+#endif
 }
 
 static void MX_GPIO_Init(void) {
